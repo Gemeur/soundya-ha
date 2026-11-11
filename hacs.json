@@ -1,0 +1,6 @@
+{
+  "name": "Soundya (Яндекс Станция 2)",
+  "content_in_root": false,
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
+}

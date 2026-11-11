@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Подключение к Soundya (Станция 2)",
+        "description": "Введите IP-адрес Яндекс Станции 2 с прошивкой Soundya.",
+        "data": {
+          "host": "IP-адрес",
+          "port": "Порт"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Найдена {name}",
+        "description": "Вы хотите добавить {name} по адресу {host} в Home Assistant?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к Станции. Проверьте IP-адрес и порт."
+    },
+    "abort": {
+      "already_configured": "Это устройство уже добавлено в Home Assistant."
+    }
+  }
+}

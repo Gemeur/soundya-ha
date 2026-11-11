@@ -1,0 +1,16 @@
+{
+  "domain": "soundya",
+  "name": "Soundya (Станция 2)",
+  "codeowners": ["@Gemeur"],
+  "config_flow": true,
+  "documentation": "https://github.com/Gemeur/soundya-ha",
+  "issue_tracker": "https://github.com/Gemeur/soundya-ha/issues",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "version": "1.0.0",
+  "zeroconf": [
+    {
+      "type": "_soundya._tcp.local."
+    }
+  ]
+}
