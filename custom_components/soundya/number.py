@@ -34,14 +34,14 @@ async def async_setup_entry(
 
 
 class SoundyaNightBrightnessNumber(CoordinatorEntity[SoundyaCoordinator], NumberEntity):
-    """Number slider for night mode max brightness."""
+    """Number slider for night mode max brightness (Lumya)."""
 
     _attr_has_entity_name = True
     _attr_name = "Макс. яркость ночью"
     _attr_icon = "mdi:brightness-4"
-    _attr_native_min_value = 0.0
+    _attr_native_min_value = 5.0
     _attr_native_max_value = 100.0
-    _attr_native_step = 1.0
+    _attr_native_step = 5.0
     _attr_native_unit_of_measurement = "%"
     _attr_mode = NumberMode.SLIDER
 
@@ -50,17 +50,20 @@ class SoundyaNightBrightnessNumber(CoordinatorEntity[SoundyaCoordinator], Number
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_night_brightness"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def available(self) -> bool:
+        """Available only when Lumya is active."""
+        return super().available and bool(self.coordinator.data.get("lumya_available", False))
 
     @property
     def native_value(self) -> float:
-        """Return the current night brightness in percent."""
+        """Return current night brightness in percent."""
         glow = self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
         val = glow.get("nightBrightness", 0.2)
         return float(round(float(val) * 100.0))
@@ -72,13 +75,13 @@ class SoundyaNightBrightnessNumber(CoordinatorEntity[SoundyaCoordinator], Number
 
 
 class SoundyaSpeedNumber(CoordinatorEntity[SoundyaCoordinator], NumberEntity):
-    """Number slider for effect speed."""
+    """Number slider for effect / animation speed."""
 
     _attr_has_entity_name = True
-    _attr_name = "Скорость эффектов"
+    _attr_name = "Скорость подсветки"
     _attr_icon = "mdi:speedometer"
     _attr_native_min_value = 10.0
-    _attr_native_max_value = 100.0
+    _attr_native_max_value = 300.0
     _attr_native_step = 5.0
     _attr_native_unit_of_measurement = "%"
     _attr_mode = NumberMode.SLIDER
@@ -88,35 +91,42 @@ class SoundyaSpeedNumber(CoordinatorEntity[SoundyaCoordinator], NumberEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_speed"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
 
     @property
     def native_value(self) -> float:
         """Current speed in percent."""
-        glow = self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
-        val = glow.get("speed", 0.5)
-        return float(round(float(val) * 100.0))
+        if not self.coordinator.data:
+            return 100.0
+        if self.coordinator.data.get("lumya_available", False):
+            glow = self.coordinator.data.get("glow", {})
+            val = glow.get("speed", 0.5)
+            return float(round(float(val) * 100.0))
+
+        settings = self.coordinator.data.get("status", {}).get("settings", {})
+        return float(settings.get("light_speed", 100))
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set effect speed."""
-        norm = max(0.1, min(1.0, value / 100.0))
-        await self.coordinator.async_set_glow({"speed": round(norm, 2)})
+        """Set speed."""
+        if self.coordinator.data and self.coordinator.data.get("lumya_available", False):
+            norm = max(0.1, min(1.0, value / 100.0))
+            await self.coordinator.async_set_glow({"speed": round(norm, 2)})
+        else:
+            await self.coordinator.async_set_settings({"light_speed": int(round(value))})
 
 
 class SoundyaIntensityNumber(CoordinatorEntity[SoundyaCoordinator], NumberEntity):
-    """Number slider for effect intensity."""
+    """Number slider for effect intensity / reaction to music."""
 
     _attr_has_entity_name = True
-    _attr_name = "Интенсивность эффектов"
-    _attr_icon = "mdi:tune"
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 100.0
+    _attr_name = "Реакция на музыку"
+    _attr_icon = "mdi:waveform"
+    _attr_native_min_value = 10.0
+    _attr_native_max_value = 200.0
     _attr_native_step = 5.0
     _attr_native_unit_of_measurement = "%"
     _attr_mode = NumberMode.SLIDER
@@ -126,22 +136,29 @@ class SoundyaIntensityNumber(CoordinatorEntity[SoundyaCoordinator], NumberEntity
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_intensity"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
 
     @property
     def native_value(self) -> float:
         """Current intensity in percent."""
-        glow = self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
-        val = glow.get("intensity", 0.3)
-        return float(round(float(val) * 100.0))
+        if not self.coordinator.data:
+            return 100.0
+        if self.coordinator.data.get("lumya_available", False):
+            glow = self.coordinator.data.get("glow", {})
+            val = glow.get("intensity", 0.5)
+            return float(round(float(val) * 100.0))
+
+        settings = self.coordinator.data.get("status", {}).get("settings", {})
+        return float(settings.get("light_intensity", 100))
 
     async def async_set_native_value(self, value: float) -> None:
         """Set intensity."""
-        norm = max(0.0, min(1.0, value / 100.0))
-        await self.coordinator.async_set_glow({"intensity": round(norm, 2)})
+        if self.coordinator.data and self.coordinator.data.get("lumya_available", False):
+            norm = max(0.1, min(1.0, value / 100.0))
+            await self.coordinator.async_set_glow({"intensity": round(norm, 2)})
+        else:
+            await self.coordinator.async_set_settings({"light_intensity": int(round(value))})

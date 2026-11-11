@@ -36,7 +36,7 @@ async def async_setup_entry(
 
 
 class SoundyaNightModeSwitch(CoordinatorEntity[SoundyaCoordinator], SwitchEntity):
-    """Switch for night mode."""
+    """Switch for night mode (Lumya)."""
 
     _attr_has_entity_name = True
     _attr_name = "Ночной режим"
@@ -47,13 +47,16 @@ class SoundyaNightModeSwitch(CoordinatorEntity[SoundyaCoordinator], SwitchEntity
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_night"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def available(self) -> bool:
+        """Available only when Lumya is active."""
+        return super().available and bool(self.coordinator.data.get("lumya_available", False))
 
     @property
     def is_on(self) -> bool:
@@ -82,13 +85,16 @@ class SoundyaYieldSwitch(CoordinatorEntity[SoundyaCoordinator], SwitchEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_yield"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def available(self) -> bool:
+        """Available only when Lumya is active."""
+        return super().available and bool(self.coordinator.data.get("lumya_available", False))
 
     @property
     def is_on(self) -> bool:
@@ -117,13 +123,11 @@ class SoundyaEqualizerSwitch(CoordinatorEntity[SoundyaCoordinator], SwitchEntity
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_eq_on"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
 
     @property
     def is_on(self) -> bool:
@@ -155,13 +159,11 @@ class SoundyaShareHeardSwitch(CoordinatorEntity[SoundyaCoordinator], SwitchEntit
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_share_heard"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
 
     @property
     def is_on(self) -> bool:
@@ -193,13 +195,11 @@ class SoundyaBypassSwitch(CoordinatorEntity[SoundyaCoordinator], SwitchEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_bypass_on"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
 
     @property
     def is_on(self) -> bool:

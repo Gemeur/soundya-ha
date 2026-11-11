@@ -13,12 +13,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import SoundyaCoordinator
+from .light import AMBILIGHT_ID_TO_NAME, AMBILIGHT_MODES, AMBILIGHT_NAME_TO_ID
 
 _LOGGER = logging.getLogger(__name__)
 
 SEPARATOR = "─── Эффекты под музыку ───"
 
-BUILTIN_PALETTES = [
+FALLBACK_PALETTES = [
     ("aurora", "Северное сияние"),
     ("sunset", "Закат"),
     ("ocean", "Океан"),
@@ -51,7 +52,7 @@ async def async_setup_entry(
 
 
 class SoundyaEffectSelect(CoordinatorEntity[SoundyaCoordinator], SelectEntity):
-    """Combined selector for calm and music effects with a separator."""
+    """Dynamic selector for Lumya 34 matrix effects or native Soundya Ambilight modes."""
 
     _attr_has_entity_name = True
     _attr_name = "Эффект подсветки"
@@ -62,48 +63,64 @@ class SoundyaEffectSelect(CoordinatorEntity[SoundyaCoordinator], SelectEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_effect"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def is_lumya(self) -> bool:
+        """Return True if Lumya is active."""
+        return bool(self.coordinator.data.get("lumya_available", False)) if self.coordinator.data else False
 
     @property
     def options(self) -> list[str]:
-        """Return combined effects: calm, separator, music."""
-        catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
-        calm = [e.get("name", e.get("id")) for e in catalog if not e.get("music")]
-        music = [e.get("name", e.get("id")) for e in catalog if e.get("music")]
-        return calm + [SEPARATOR] + music
+        """Return list of options."""
+        if self.is_lumya:
+            catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
+            calm = [e.get("name", e.get("id")) for e in catalog if not e.get("music")]
+            music = [e.get("name", e.get("id")) for e in catalog if e.get("music")]
+            return calm + [SEPARATOR] + music
+        return [name for _, name in AMBILIGHT_MODES]
 
     @property
     def current_option(self) -> str | None:
-        """Return current effect name."""
-        glow = self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
-        cur_id = glow.get("effect")
-        catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
-        for e in catalog:
-            if e.get("id") == cur_id:
-                return e.get("name", cur_id)
-        return cur_id
+        """Return current option."""
+        if self.is_lumya:
+            glow = self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
+            cur_id = glow.get("effect")
+            catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
+            for e in catalog:
+                if e.get("id") == cur_id:
+                    return e.get("name", cur_id)
+            return cur_id
+
+        settings = self.coordinator.data.get("status", {}).get("settings", {}) if self.coordinator.data else {}
+        mode = settings.get("light_mode", "solid")
+        return AMBILIGHT_ID_TO_NAME.get(mode, mode)
 
     async def async_select_option(self, option: str) -> None:
-        """Apply chosen effect, ignoring the separator."""
+        """Apply chosen effect."""
         if option == SEPARATOR:
             return
-        catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
-        effect_id = option
-        for e in catalog:
-            if e.get("name") == option or e.get("id") == option:
-                effect_id = e.get("id")
-                break
-        await self.coordinator.async_set_glow({"effect": effect_id, "power": True})
+
+        if self.is_lumya:
+            catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
+            effect_id = option
+            for e in catalog:
+                if e.get("name") == option or e.get("id") == option:
+                    effect_id = e.get("id")
+                    break
+            await self.coordinator.async_set_glow({"effect": effect_id, "power": True})
+        else:
+            mode_id = AMBILIGHT_NAME_TO_ID.get(option, option.lower())
+            if mode_id in AMBILIGHT_ID_TO_NAME:
+                await self.coordinator.async_set_settings({"light_mode": mode_id, "ring": True})
 
 
 class SoundyaPaletteSelect(CoordinatorEntity[SoundyaCoordinator], SelectEntity):
-    """Selector for color palettes."""
+    """Selector for color palettes (active when Lumya is running)."""
 
     _attr_has_entity_name = True
     _attr_name = "Цветовая палитра"
@@ -114,41 +131,57 @@ class SoundyaPaletteSelect(CoordinatorEntity[SoundyaCoordinator], SelectEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_palette"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def available(self) -> bool:
+        """Only available when Lumya is active."""
+        return super().available and bool(self.coordinator.data.get("lumya_available", False))
 
     @property
     def options(self) -> list[str]:
-        """Return list of palette names."""
-        return [name for _, name in BUILTIN_PALETTES]
+        """Return list of palette names from Lumya catalog."""
+        palettes = self.coordinator.data.get("palettes", []) if self.coordinator.data else []
+        if palettes:
+            return [p.get("name", p.get("id")) for p in palettes if "name" in p or "id" in p]
+        return [name for _, name in FALLBACK_PALETTES]
 
     @property
     def current_option(self) -> str | None:
         """Return current palette name."""
         glow = self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
         cur_pal = glow.get("palette", "aurora")
-        for pal_id, name in BUILTIN_PALETTES:
+        palettes = self.coordinator.data.get("palettes", []) if self.coordinator.data else []
+        for p in palettes:
+            if p.get("id") == cur_pal:
+                return p.get("name", cur_pal)
+        for pal_id, name in FALLBACK_PALETTES:
             if pal_id == cur_pal:
                 return name
         return cur_pal
 
     async def async_select_option(self, option: str) -> None:
         """Apply chosen color palette."""
+        palettes = self.coordinator.data.get("palettes", []) if self.coordinator.data else []
         target_id = option
-        for pal_id, name in BUILTIN_PALETTES:
-            if name == option or pal_id == option:
-                target_id = pal_id
+        for p in palettes:
+            if p.get("name") == option or p.get("id") == option:
+                target_id = p.get("id")
                 break
+        else:
+            for pal_id, name in FALLBACK_PALETTES:
+                if name == option or pal_id == option:
+                    target_id = pal_id
+                    break
         await self.coordinator.async_set_glow({"palette": target_id})
 
 
 class SoundyaPresetSelect(CoordinatorEntity[SoundyaCoordinator], SelectEntity):
-    """Selector for Glow presets."""
+    """Selector for Glow presets (active when Lumya is running)."""
 
     _attr_has_entity_name = True
     _attr_name = "Пресет подсветки"
@@ -159,13 +192,16 @@ class SoundyaPresetSelect(CoordinatorEntity[SoundyaCoordinator], SelectEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_preset"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def available(self) -> bool:
+        """Only available when Lumya is active."""
+        return super().available and bool(self.coordinator.data.get("lumya_available", False))
 
     @property
     def options(self) -> list[str]:

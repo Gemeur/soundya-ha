@@ -9,6 +9,7 @@ from typing import Any
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
@@ -17,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Class to manage fetching Soundya data from Station 2."""
+    """Class to manage fetching Soundya data from speaker."""
 
     def __init__(self, hass: HomeAssistant, host: str, port: int) -> None:
         """Initialize."""
@@ -32,50 +33,86 @@ class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.base_url = f"http://{host}:{port}"
         self.session = async_get_clientsession(hass)
         self.catalog: list[dict[str, Any]] = []
+        self.palettes: list[dict[str, Any]] = []
+
+    def get_device_info(self, entry_id: str) -> DeviceInfo:
+        """Return dynamic device info based on current speaker model."""
+        status = self.data.get("status", {}) if self.data else {}
+        dev = status.get("device", {})
+        model = dev.get("model", "Яндекс Станция")
+        version = dev.get("version", "0.5.7")
+        return DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=model,
+            manufacturer="Яндекс / Soundya",
+            model=model,
+            sw_version=version,
+            configuration_url=self.base_url,
+        )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch status and glow state from speaker."""
+        """Fetch status, mods and glow state from speaker."""
         try:
             async with asyncio.timeout(5):
-                # 1. Fetch player status
+                # 1. Fetch player status & settings
                 async with self.session.get(f"{self.base_url}/api/status") as resp:
                     if resp.status != 200:
                         raise UpdateFailed(f"Status error: HTTP {resp.status}")
                     status = await resp.json(content_type=None)
 
-                # 2. Fetch glow state
-                glow = {}
+                # 2. Check installed & active mods
+                mods_data: dict[str, Any] = {}
+                lumya_active = False
                 try:
-                    async with self.session.get(f"{self.base_url}/api/glow/state") as resp:
+                    async with self.session.get(f"{self.base_url}/api/mods") as resp:
                         if resp.status == 200:
-                            glow = await resp.json(content_type=None)
+                            mods_data = await resp.json(content_type=None)
+                            lumya_active = bool(mods_data.get("active", {}).get("lumya", False))
                 except Exception as err:
-                    _LOGGER.debug("Could not fetch glow state: %s", err)
+                    _LOGGER.debug("Could not fetch mods: %s", err)
 
-                # 3. Fetch presets
-                presets = []
-                try:
-                    async with self.session.get(f"{self.base_url}/api/glow/presets") as resp:
-                        if resp.status == 200:
-                            presets = await resp.json(content_type=None)
-                except Exception as err:
-                    _LOGGER.debug("Could not fetch presets: %s", err)
+                # 3. If Lumya is active, fetch glow state, presets & catalog
+                glow: dict[str, Any] = {}
+                presets: list[dict[str, Any]] = []
+                lumya_available = False
 
-                # 4. Fetch catalog if not loaded yet
-                if not self.catalog:
+                if lumya_active:
                     try:
-                        async with self.session.get(f"{self.base_url}/api/glow/catalog") as resp:
+                        async with self.session.get(f"{self.base_url}/api/glow/state") as resp:
                             if resp.status == 200:
-                                cat_data = await resp.json(content_type=None)
-                                self.catalog = cat_data.get("effects", [])
+                                glow = await resp.json(content_type=None)
+                                lumya_available = True
                     except Exception as err:
-                        _LOGGER.debug("Could not fetch catalog: %s", err)
+                        _LOGGER.debug("Could not fetch glow state: %s", err)
+
+                    if lumya_available:
+                        # Fetch presets
+                        try:
+                            async with self.session.get(f"{self.base_url}/api/glow/presets") as resp:
+                                if resp.status == 200:
+                                    presets = await resp.json(content_type=None)
+                        except Exception as err:
+                            _LOGGER.debug("Could not fetch presets: %s", err)
+
+                        # Fetch catalog if not loaded yet
+                        if not self.catalog or not self.palettes:
+                            try:
+                                async with self.session.get(f"{self.base_url}/api/glow/catalog") as resp:
+                                    if resp.status == 200:
+                                        cat_data = await resp.json(content_type=None)
+                                        self.catalog = cat_data.get("effects", [])
+                                        self.palettes = cat_data.get("palettes", [])
+                            except Exception as err:
+                                _LOGGER.debug("Could not fetch catalog: %s", err)
 
                 return {
                     "status": status,
+                    "mods": mods_data,
+                    "lumya_available": lumya_available,
                     "glow": glow,
                     "presets": presets,
                     "catalog": self.catalog,
+                    "palettes": self.palettes,
                 }
         except TimeoutError as err:
             raise UpdateFailed(f"Timeout communicating with Soundya at {self.host}:{self.port}") from err

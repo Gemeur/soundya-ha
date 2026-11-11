@@ -44,13 +44,11 @@ class SoundyaBaseButton(CoordinatorEntity[SoundyaCoordinator], ButtonEntity):
         self._key = key
         self._attr_name = name
         self._attr_unique_id = f"{entry.unique_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
 
 
 class SoundyaLikeButton(SoundyaBaseButton):

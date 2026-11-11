@@ -1,4 +1,4 @@
-"""Light entity for Soundya 88-LED matrix on Station 2."""
+"""Light entity for Soundya backlight / matrix."""
 from __future__ import annotations
 
 import logging
@@ -23,6 +23,19 @@ from .coordinator import SoundyaCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# Native Soundya Ambilight modes (mode_id -> Russian title)
+AMBILIGHT_MODES: list[tuple[str, str]] = [
+    ("solid", "Ровный"),
+    ("pulse", "Пульс"),
+    ("eq", "Эквалайзер"),
+    ("wave", "Волна"),
+    ("rainbow", "Радуга"),
+    ("breathe", "Дыхание"),
+    ("running", "Бегущий огонь"),
+]
+AMBILIGHT_ID_TO_NAME: dict[str, str] = dict(AMBILIGHT_MODES)
+AMBILIGHT_NAME_TO_ID: dict[str, str] = {v: k for k, v in AMBILIGHT_MODES}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -35,7 +48,7 @@ async def async_setup_entry(
 
 
 class SoundyaLight(CoordinatorEntity[SoundyaCoordinator], LightEntity):
-    """Representation of the 88-LED matrix light on Station 2."""
+    """Adaptive light entity: automatically switches between Lumya and Ambilight."""
 
     _attr_has_entity_name = True
     _attr_name = "Подсветка"
@@ -48,86 +61,134 @@ class SoundyaLight(CoordinatorEntity[SoundyaCoordinator], LightEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.unique_id}_light"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Станция 2",
-            manufacturer="Яндекс / Soundya",
-            model="Яндекс Станция 2",
-            configuration_url=coordinator.base_url,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def is_lumya(self) -> bool:
+        """Return True if Lumya mod is active and available."""
+        if not self.coordinator.data:
+            return False
+        return bool(self.coordinator.data.get("lumya_available", False))
 
     @property
     def glow_data(self) -> dict[str, Any]:
-        """Return raw glow data."""
+        """Return raw glow data from Lumya."""
         return self.coordinator.data.get("glow", {}) if self.coordinator.data else {}
+
+    @property
+    def settings_data(self) -> dict[str, Any]:
+        """Return raw settings data from Soundya."""
+        status = self.coordinator.data.get("status", {}) if self.coordinator.data else {}
+        return status.get("settings", {})
 
     @property
     def is_on(self) -> bool:
         """Return True if light is on."""
-        return bool(self.glow_data.get("power", True))
+        if self.is_lumya:
+            return bool(self.glow_data.get("power", True))
+        return bool(self.settings_data.get("ring", False))
 
     @property
     def brightness(self) -> int:
-        """Return the brightness of this light between 0..255."""
-        b = self.glow_data.get("brightness", 1.0)
-        return int(round(float(b) * 255.0))
+        """Return the brightness between 0..255."""
+        if self.is_lumya:
+            b = self.glow_data.get("brightness", 1.0)
+            return int(round(float(b) * 255.0))
+        b = self.settings_data.get("light_bright", 100)
+        return int(round(float(b) * 2.55))
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:
-        """Return the rgb color value [0..255, 0..255, 0..255]."""
-        hex_color = self.glow_data.get("color", "#ff7a00")
-        hex_clean = hex_color.lstrip("#")
+        """Return the RGB color value."""
+        if self.is_lumya:
+            hex_color = self.glow_data.get("color", "#ff7a00")
+        else:
+            hex_color = self.settings_data.get("light_color", "#ff7a00")
+
+        hex_clean = str(hex_color).lstrip("#")
         if len(hex_clean) == 6:
             try:
-                r = int(hex_clean[0:2], 16)
-                g = int(hex_clean[2:4], 16)
-                b = int(hex_clean[4:6], 16)
-                return (r, g, b)
+                return (
+                    int(hex_clean[0:2], 16),
+                    int(hex_clean[2:4], 16),
+                    int(hex_clean[4:6], 16),
+                )
             except ValueError:
                 pass
         return (255, 122, 0)
 
     @property
     def effect_list(self) -> list[str]:
-        """Return the list of supported effects."""
-        catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
-        return [e.get("name", e.get("id")) for e in catalog if "name" in e or "id" in e]
+        """Dynamically return effect list depending on whether Lumya is present."""
+        if self.is_lumya:
+            catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
+            return [e.get("name", e.get("id")) for e in catalog if "name" in e or "id" in e]
+        return [name for _, name in AMBILIGHT_MODES]
 
     @property
     def effect(self) -> str | None:
-        """Return the current effect."""
-        current_id = self.glow_data.get("effect")
-        if not current_id:
-            return None
-        catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
-        for e in catalog:
-            if e.get("id") == current_id:
-                return e.get("name", current_id)
-        return current_id
+        """Return the current active effect."""
+        if self.is_lumya:
+            current_id = self.glow_data.get("effect")
+            if not current_id:
+                return None
+            catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
+            for e in catalog:
+                if e.get("id") == current_id:
+                    return e.get("name", current_id)
+            return current_id
+
+        current_mode = self.settings_data.get("light_mode", "solid")
+        return AMBILIGHT_ID_TO_NAME.get(current_mode, current_mode)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the light on."""
-        patch: dict[str, Any] = {"power": True}
+        """Turn the light on or update effect/color/brightness."""
+        if self.is_lumya:
+            patch: dict[str, Any] = {"power": True}
 
-        if ATTR_BRIGHTNESS in kwargs:
-            patch["brightness"] = round(kwargs[ATTR_BRIGHTNESS] / 255.0, 2)
+            if ATTR_BRIGHTNESS in kwargs:
+                patch["brightness"] = round(kwargs[ATTR_BRIGHTNESS] / 255.0, 2)
 
-        if ATTR_RGB_COLOR in kwargs:
-            r, g, b = kwargs[ATTR_RGB_COLOR]
-            patch["color"] = f"#{r:02x}{g:02x}{b:02x}"
+            if ATTR_RGB_COLOR in kwargs:
+                r, g, b = kwargs[ATTR_RGB_COLOR]
+                patch["color"] = f"#{r:02x}{g:02x}{b:02x}"
 
-        if ATTR_EFFECT in kwargs:
-            target_name = kwargs[ATTR_EFFECT]
-            catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
-            effect_id = target_name
-            for e in catalog:
-                if e.get("name") == target_name or e.get("id") == target_name:
-                    effect_id = e.get("id")
-                    break
-            patch["effect"] = effect_id
+            if ATTR_EFFECT in kwargs:
+                target_name = kwargs[ATTR_EFFECT]
+                catalog = self.coordinator.data.get("catalog", []) if self.coordinator.data else []
+                effect_id = target_name
+                for e in catalog:
+                    if e.get("name") == target_name or e.get("id") == target_name:
+                        effect_id = e.get("id")
+                        break
+                patch["effect"] = effect_id
 
-        await self.coordinator.async_set_glow(patch)
+            await self.coordinator.async_set_glow(patch)
+        else:
+            patch: dict[str, Any] = {"ring": True}
+
+            if ATTR_BRIGHTNESS in kwargs:
+                patch["light_bright"] = max(10, min(100, int(round(kwargs[ATTR_BRIGHTNESS] / 2.55))))
+
+            if ATTR_RGB_COLOR in kwargs:
+                r, g, b = kwargs[ATTR_RGB_COLOR]
+                patch["light_color"] = f"#{r:02x}{g:02x}{b:02x}"
+
+            if ATTR_EFFECT in kwargs:
+                target_name = kwargs[ATTR_EFFECT]
+                mode_id = AMBILIGHT_NAME_TO_ID.get(target_name, target_name.lower())
+                if mode_id in AMBILIGHT_ID_TO_NAME:
+                    patch["light_mode"] = mode_id
+
+            await self.coordinator.async_set_settings(patch)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""
-        await self.coordinator.async_set_glow({"power": False})
+        if self.is_lumya:
+            await self.coordinator.async_set_glow({"power": False})
+        else:
+            await self.coordinator.async_set_settings({"ring": False})
