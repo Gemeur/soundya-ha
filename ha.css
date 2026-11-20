@@ -1,0 +1,72 @@
+/* =====================================================================
+   Home Assistant Integration Mod for Soundya
+   ===================================================================== */
+
+details.soundya-ha-card {
+  margin-bottom: 12px;
+}
+
+details.soundya-ha-card .ha-card-body {
+  padding: 0 16px 16px 16px;
+}
+
+.ha-host-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--muted, #8e8e93);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  margin: 14px 0;
+}
+
+.ha-host-row code {
+  color: var(--accent, #ff5500);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ha-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.soundya-ha-card .help-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.soundya-ha-card .help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.soundya-ha-card .help-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: top;
+}
+
+.soundya-ha-card .help-cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  color: var(--accent, #ff5500);
+  white-space: nowrap;
+  font-weight: 600;
+  width: 35%;
+}
+
+.soundya-ha-card .help-desc {
+  color: var(--ink, #e0e0e0);
+}
