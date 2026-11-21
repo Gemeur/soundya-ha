@@ -136,6 +136,14 @@ class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("Failed to send command '%s' to Soundya: %s", cmd, err)
             return False
 
+    async def async_alice_say(self, text: str) -> bool:
+        """Make Alice speak a phrase out loud."""
+        return await self.async_control_cmd(f"alice say {text}")
+
+    async def async_alice_cmd(self, cmd: str) -> bool:
+        """Send a control command to Alice."""
+        return await self.async_control_cmd(f"alice {cmd}")
+
     async def async_set_glow(self, patch: dict[str, Any]) -> bool:
         """Update glow state via POST /api/glow/state."""
         try:

@@ -1,4 +1,4 @@
-"""Media Player entity for Soundya on Station 2."""
+"""Media Player entities for Soundya and Alice on Station 2."""
 from __future__ import annotations
 
 import logging
@@ -29,17 +29,23 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Soundya media player entity."""
+    """Set up the Soundya and Alice media player entities."""
     coordinator: SoundyaCoordinator = getattr(entry, "runtime_data", None) or hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([SoundyaMediaPlayer(coordinator, entry)])
+    async_add_entities(
+        [
+            SoundyaMediaPlayer(coordinator, entry),
+            AliceMediaPlayer(coordinator, entry),
+        ]
+    )
 
 
 class SoundyaMediaPlayer(CoordinatorEntity[SoundyaCoordinator], MediaPlayerEntity):
-    """Representation of the Soundya media player on Station 2."""
+    """Representation of the Soundya (SoundCloud) media player on Station 2."""
 
     _attr_has_entity_name = True
-    _attr_name = None
+    _attr_name = "Soundya"
     _attr_device_class = MediaPlayerDeviceClass.SPEAKER
+    _attr_icon = "mdi:music"
 
     _attr_supported_features = (
         MediaPlayerEntityFeature.PLAY
@@ -200,3 +206,142 @@ class SoundyaMediaPlayer(CoordinatorEntity[SoundyaCoordinator], MediaPlayerEntit
         """Set repeat mode."""
         is_on = repeat != RepeatMode.OFF
         await self.coordinator.async_control_cmd(f"repeat {'on' if is_on else 'off'}")
+
+
+class AliceMediaPlayer(CoordinatorEntity[SoundyaCoordinator], MediaPlayerEntity):
+    """Representation of the native Alice media player on Station 2."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Алиса"
+    _attr_device_class = MediaPlayerDeviceClass.SPEAKER
+    _attr_icon = "mdi:microphone"
+
+    _attr_supported_features = (
+        MediaPlayerEntityFeature.PLAY
+        | MediaPlayerEntityFeature.PAUSE
+        | MediaPlayerEntityFeature.STOP
+        | MediaPlayerEntityFeature.NEXT_TRACK
+        | MediaPlayerEntityFeature.PREVIOUS_TRACK
+        | MediaPlayerEntityFeature.VOLUME_SET
+        | MediaPlayerEntityFeature.VOLUME_STEP
+        | MediaPlayerEntityFeature.PLAY_MEDIA
+    )
+    _attr_source_list = ["alice", "yandex_music", "radio", "idle"]
+
+    def __init__(self, coordinator: SoundyaCoordinator, entry: ConfigEntry) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.unique_id}_alice_player"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return dynamic device info."""
+        return self.coordinator.get_device_info(self._entry.entry_id)
+
+    @property
+    def status_data(self) -> dict[str, Any]:
+        """Return raw player status dict."""
+        return self.coordinator.data.get("status", {}) if self.coordinator.data else {}
+
+    @property
+    def is_alice_active(self) -> bool:
+        """Check if Alice is the active audio source."""
+        return self.status_data.get("source") == "alice"
+
+    @property
+    def state(self) -> MediaPlayerState:
+        """Return the state of the player."""
+        if self.is_alice_active:
+            return MediaPlayerState.PLAYING
+        return MediaPlayerState.IDLE
+
+    @property
+    def media_title(self) -> str | None:
+        """Title of current playing media."""
+        if self.is_alice_active:
+            if heard := self.status_data.get("heard"):
+                if isinstance(heard, dict) and (text := heard.get("text")):
+                    return text
+                if isinstance(heard, str):
+                    return heard
+            return "Яндекс Музыка / Радио"
+        return None
+
+    @property
+    def media_artist(self) -> str | None:
+        """Artist of current playing media."""
+        if self.is_alice_active:
+            return "Алиса"
+        return None
+
+    @property
+    def volume_level(self) -> float | None:
+        """Volume level of the media player (0..1.0)."""
+        vol = self.status_data.get("volume")
+        if vol is not None:
+            return max(0.0, min(1.0, float(vol) / 10.0))
+        return None
+
+    @property
+    def source(self) -> str | None:
+        """Name of the current input source."""
+        return "alice" if self.is_alice_active else "idle"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return Alice extra attributes."""
+        attrs: dict[str, Any] = {}
+        if heard := self.status_data.get("heard"):
+            if isinstance(heard, dict):
+                attrs["last_heard"] = heard.get("text")
+                attrs["last_heard_at"] = heard.get("at")
+            elif isinstance(heard, str):
+                attrs["last_heard"] = heard
+        attrs["source"] = self.status_data.get("source")
+        return attrs
+
+    async def async_play_media(self, media_type: str, media_id: str, **kwargs: Any) -> None:
+        """Play media or speak text via Alice TTS / voice command.
+
+        Supports:
+        - text / tts / announce: Speaks the phrase using Alice voice.
+        - command / cmd: Sends voice command to Alice.
+        - Direct phrases: Speaks or executes via Alice.
+        """
+        text = str(media_id).strip()
+        for prefix in ("say:", "tts:", "speak:", "text:"):
+            if text.lower().startswith(prefix):
+                text = text[len(prefix):].strip()
+                break
+
+        if media_type in ("command", "cmd") or str(media_id).strip().lower().startswith("cmd:"):
+            cmd = text.removeprefix("cmd:").strip()
+            await self.coordinator.async_control_cmd(f"alice say {cmd}")
+        else:
+            await self.coordinator.async_control_cmd(f"alice say {text}")
+
+    async def async_media_play(self) -> None:
+        """Resume Alice playback."""
+        await self.coordinator.async_control_cmd("alice resume")
+
+    async def async_media_pause(self) -> None:
+        """Pause Alice playback."""
+        await self.coordinator.async_control_cmd("alice pause")
+
+    async def async_media_stop(self) -> None:
+        """Stop Alice playback."""
+        await self.coordinator.async_control_cmd("alice stop")
+
+    async def async_media_next_track(self) -> None:
+        """Next track for Alice playback."""
+        await self.coordinator.async_control_cmd("alice next")
+
+    async def async_media_previous_track(self) -> None:
+        """Previous track for Alice playback."""
+        await self.coordinator.async_control_cmd("alice prev")
+
+    async def async_set_volume_level(self, volume: float) -> None:
+        """Set volume level, range 0..1."""
+        level = int(round(volume * 10))
+        await self.coordinator.async_control_cmd(f"volume set {level}")
