@@ -6,19 +6,40 @@
         "description": "Enter the IP address of your Yandex Station 2 running Soundya.",
         "data": {
           "host": "IP Address",
-          "port": "Port"
+          "port": "Port",
+          "pin": "Web Panel PIN (optional)"
         }
       },
       "zeroconf_confirm": {
         "title": "Discovered {name}",
-        "description": "Do you want to add {name} at {host} to Home Assistant?"
+        "description": "Do you want to add {name} at {host} to Home Assistant?",
+        "data": {
+          "pin": "Web Panel PIN (optional)"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Could not connect to Station. Check IP address and port."
+      "cannot_connect": "Could not connect to Station. Check IP address and port.",
+      "invalid_auth": "Invalid web panel PIN.",
+      "pin_required": "A PIN is configured on this speaker. Please enter the panel PIN."
     },
     "abort": {
       "already_configured": "Device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Soundya Options",
+        "description": "Configure Soundya parameters.",
+        "data": {
+          "pin": "Web Panel PIN (if configured)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Station.",
+      "invalid_auth": "Invalid web panel PIN."
     }
   }
 }

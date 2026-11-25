@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching Soundya data from speaker."""
 
-    def __init__(self, hass: HomeAssistant, host: str, port: int) -> None:
+    def __init__(self, hass: HomeAssistant, host: str, port: int, pin: str = "") -> None:
         """Initialize."""
         super().__init__(
             hass,
@@ -30,6 +30,8 @@ class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.host = host
         self.port = port
+        self.pin = pin.strip()
+        self.session_token: str | None = None
         self.base_url = f"http://{host}:{port}"
         self.session = async_get_clientsession(hass)
         self.catalog: list[dict[str, Any]] = []
@@ -121,20 +123,68 @@ class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
-    async def async_control_cmd(self, cmd: str) -> bool:
-        """Send a player command via POST /api/cmd."""
+    async def async_ensure_login(self) -> bool:
+        """Log in to Soundya web panel if PIN is configured."""
+        if not self.pin:
+            return True
         try:
             async with asyncio.timeout(5):
                 async with self.session.post(
-                    f"{self.base_url}/api/cmd",
-                    data=cmd.encode("utf-8"),
+                    f"{self.base_url}/api/login",
+                    data=self.pin.encode("utf-8"),
                     headers={"Content-Type": "text/plain; charset=utf-8"},
                 ) as resp:
+                    if resp.status == 200:
+                        cookie = resp.cookies.get("soundya_s")
+                        if cookie:
+                            self.session_token = cookie.value
+                            _LOGGER.debug("Successfully authenticated with Soundya panel using PIN")
+                            return True
+                    text = await resp.text()
+                    _LOGGER.warning("Soundya authentication failed: %s (status %s)", text, resp.status)
+                    return False
+        except Exception as err:
+            _LOGGER.warning("Could not log in to Soundya with PIN: %s", err)
+            return False
+
+    async def _async_post(
+        self,
+        endpoint: str,
+        data: Any = None,
+        json: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> bool:
+        """Send a POST request with automatic PIN authentication."""
+        req_headers = dict(headers or {})
+        if self.session_token:
+            req_headers["Cookie"] = f"soundya_s={self.session_token}"
+
+        url = f"{self.base_url}{endpoint}"
+        try:
+            async with asyncio.timeout(5):
+                async with self.session.post(url, data=data, json=json, headers=req_headers) as resp:
+                    if resp.status == 401 and self.pin:
+                        _LOGGER.debug("Received 401 from %s, attempting to log in with PIN...", endpoint)
+                        if await self.async_ensure_login():
+                            retry_headers = dict(headers or {})
+                            if self.session_token:
+                                retry_headers["Cookie"] = f"soundya_s={self.session_token}"
+                            async with self.session.post(url, data=data, json=json, headers=retry_headers) as retry_resp:
+                                await self.async_request_refresh()
+                                return retry_resp.status == 200
                     await self.async_request_refresh()
                     return resp.status == 200
         except Exception as err:
-            _LOGGER.error("Failed to send command '%s' to Soundya: %s", cmd, err)
+            _LOGGER.error("Failed POST request to %s: %s", endpoint, err)
             return False
+
+    async def async_control_cmd(self, cmd: str) -> bool:
+        """Send a player command via POST /api/cmd."""
+        return await self._async_post(
+            "/api/cmd",
+            data=cmd.encode("utf-8"),
+            headers={"Content-Type": "text/plain; charset=utf-8"},
+        )
 
     async def async_alice_say(self, text: str) -> bool:
         """Make Alice speak a phrase out loud."""
@@ -146,42 +196,12 @@ class SoundyaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_set_glow(self, patch: dict[str, Any]) -> bool:
         """Update glow state via POST /api/glow/state."""
-        try:
-            async with asyncio.timeout(5):
-                async with self.session.post(
-                    f"{self.base_url}/api/glow/state",
-                    json=patch,
-                ) as resp:
-                    await self.async_request_refresh()
-                    return resp.status == 200
-        except Exception as err:
-            _LOGGER.error("Failed to update glow state: %s", err)
-            return False
+        return await self._async_post("/api/glow/state", json=patch)
 
     async def async_apply_preset(self, preset_id: str) -> bool:
         """Apply a glow preset via POST /api/glow/presets/apply."""
-        try:
-            async with asyncio.timeout(5):
-                async with self.session.post(
-                    f"{self.base_url}/api/glow/presets/apply",
-                    json={"id": preset_id},
-                ) as resp:
-                    await self.async_request_refresh()
-                    return resp.status == 200
-        except Exception as err:
-            _LOGGER.error("Failed to apply preset '%s': %s", preset_id, err)
-            return False
+        return await self._async_post("/api/glow/presets/apply", json={"id": preset_id})
 
     async def async_set_settings(self, patch: dict[str, Any]) -> bool:
         """Update Soundya settings via POST /api/settings."""
-        try:
-            async with asyncio.timeout(5):
-                async with self.session.post(
-                    f"{self.base_url}/api/settings",
-                    json=patch,
-                ) as resp:
-                    await self.async_request_refresh()
-                    return resp.status == 200
-        except Exception as err:
-            _LOGGER.error("Failed to update settings: %s", err)
-            return False
+        return await self._async_post("/api/settings", json=patch)

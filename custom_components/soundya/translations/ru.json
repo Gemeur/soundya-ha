@@ -6,19 +6,40 @@
         "description": "Введите IP-адрес Яндекс Станции 2 с прошивкой Soundya.",
         "data": {
           "host": "IP-адрес",
-          "port": "Порт"
+          "port": "Порт",
+          "pin": "PIN-код панели (если задан)"
         }
       },
       "zeroconf_confirm": {
         "title": "Найдена {name}",
-        "description": "Вы хотите добавить {name} по адресу {host} в Home Assistant?"
+        "description": "Вы хотите добавить {name} по адресу {host} в Home Assistant?",
+        "data": {
+          "pin": "PIN-код панели (если задан)"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Не удалось подключиться к Станции. Проверьте IP-адрес и порт."
+      "cannot_connect": "Не удалось подключиться к Станции. Проверьте IP-адрес и порт.",
+      "invalid_auth": "Неверный PIN-код панели.",
+      "pin_required": "На колонке установлен PIN-код. Пожалуйста, введите PIN-код панели."
     },
     "abort": {
       "already_configured": "Это устройство уже добавлено в Home Assistant."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Параметры Soundya",
+        "description": "Настройка параметров Soundya.",
+        "data": {
+          "pin": "PIN-код панели (если задан)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к Станции.",
+      "invalid_auth": "Неверный PIN-код панели."
     }
   }
 }

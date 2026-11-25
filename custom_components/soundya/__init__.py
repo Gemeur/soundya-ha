@@ -7,7 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DEFAULT_PORT, DOMAIN
+from .const import CONF_PIN, DEFAULT_PORT, DOMAIN
 from .coordinator import SoundyaCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,8 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Soundya from a config entry."""
     host = entry.data[CONF_HOST]
     port = entry.data.get(CONF_PORT, DEFAULT_PORT)
+    pin = entry.options.get(CONF_PIN, entry.data.get(CONF_PIN, ""))
 
-    coordinator = SoundyaCoordinator(hass, host, port)
+    coordinator = SoundyaCoordinator(hass, host, port, pin=pin)
     await coordinator.async_config_entry_first_refresh()
 
     try:
@@ -38,7 +39,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     return True
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
